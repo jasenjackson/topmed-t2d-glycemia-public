@@ -177,10 +177,10 @@ if (NROW(dropped.ids) != 0 ) {
 
 # load sample ids
 sample.ids <- unique(readLines(sample.file))
-# For GDS files
-# f <- seqOpen(genotype.files)
-# sample.ids <- seqGetData(f, "sample.id")
-# all.terms <- unique(c(outcome.name, covariates))
+For GDS files
+f <- seqOpen(genotype.files)
+sample.ids <- seqGetData(f, "sample.id")
+all.terms <- unique(c(outcome.name, covariates))
 print(covariates)
 print(row.names(pheno))
 pheno <- pheno[row.names(pheno) %in% sample.ids,na.omit(all.terms,drop=F)]
