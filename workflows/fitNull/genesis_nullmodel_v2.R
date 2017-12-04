@@ -199,13 +199,6 @@ full.sample.ids <- sample.ids
 # sample.ids <- seqGetData(f, "sample.id")
 # pheno <- pheno[match(sample.ids,row.names(pheno)),,drop=F]
 
-
-
-
-
-
-
-
 ## Load KINSHIP matrix
 ## Kinship doesn't contain all samples
 kmatr = GetKinshipMatrix(kinship.matrix)
@@ -224,7 +217,7 @@ if(nrow(pheno) == 0){
 # sample.ids <- seqGetData(f, "sample.id")
 
 # if (!(identical(sample.ids,row.names(pheno)) && identical(row.names(kmatr),row.names(pheno)))){
-  # stop("Something is off problem with re-ordering")
+# stop("Something is off problem with re-ordering")
 # }
 
 # seqClose(f)
@@ -262,3 +255,104 @@ write(full.sample.ids, file =paste(label,"_sample_ids.txt",sep=""),
       append = FALSE, sep = " ")
 
 save(nullmod,annotated.frame,file=paste(label,".RDa",sep=""))
+
+
+
+
+
+
+####################
+# Summary Stats
+####################
+
+## Generate summary statistics & plots (if outcome.type == dichotomous)
+## Future versions of this script will generate summary statsitics & plots regardless of outcome type
+library("ggplot2")
+if (outcome.type == "dichotomous"){ 
+  
+  ## identify quantitative covariates (Future versions of this script may have more robust selection method)
+  cov_to_remove <- c("study_ancestry","STUDY_ANCESTRY","sex")
+  quant_covars <- covariates[! covariates %in% cov_to_remove]
+  
+  ## Create dataframes including: all subjects (pheno),
+  #  males (m), females (f), cases (case), controls (control), 
+  #  male cases (m_case), male controls (m_control), 
+  #  female cases(f_case) and female controls (f_control)
+  
+  pheno <- pheno[!is.na(pheno[,outcome.name]),]
+  case = pheno[pheno[,outcome.name] == 1,]
+  control = pheno[pheno[,outcome.name] == 0,]
+  male.val <- "M" ## look for initial M/F coding
+  female.val <- "F"
+  m = pheno[pheno$sex==male.val,]
+  f = pheno[pheno$sex==female.val,]
+  if (NROW(m)==0 && NROW(f)==0){ ## otherwise, look for 1/2 coding
+    male.val <- 1
+    m = pheno[pheno$sex==male.val,]
+    female.val <- 2
+    f = pheno[pheno$sex==female.val,]
+  }
+  m_case = case[case$sex==male.val,]
+  m_control = control[control$sex==male.val,]
+  f_case = case[case$sex==female.val,]
+  f_control = control[control$sex==female.val,]
+  
+  ## initiate data_frame for final stats table (include first row with counts, n, for each group)
+  stats_df <- data.frame(matrix(NA, nrow= 1, ncol = 9))
+  colnames(stats_df) <- c("all", "m", "f", "case", "control", "m_case", "m_control", "f_case", "f_control")
+  rownames(stats_df) <- "n"
+  stats_df[1,] <- c(nrow(pheno),nrow(m),nrow(f),nrow(case), nrow(control), nrow(m_case),nrow(m_control),nrow(f_case),nrow(f_control))
+ 
+  ## look for "STUDY_ANCESTRY" coding..  
+  if ("STUDY_ANCESTRY" %in% covariates){
+    study_ancestry_val <- "STUDY_ANCESTRY"
+  } else {
+    study_ancestry_val <- "study_ancestry"
+  }
+  
+  ## prepare "plot_pheno" dataframe for facetting 
+  plot_pheno <- pheno
+  colnames(plot_pheno)[which(names(plot_pheno) == outcome.name)]  <- "outcome"## rename outcome column to generic "outcome" 
+  plot_pheno[,"outcome"] <- as.factor(plot_pheno[,"outcome"]) 
+  levels(plot_pheno[,"outcome"]) <- c("Controls", "Cases")
+  
+  ##Iterate through each quantitative covariate, 
+  # generate boxplot+violinplot for both and add
+  # values to statistics dataframe
+
+  pdf(paste(label,"_plots.pdf",sep=""), width=11)
+  for (i in quant_covars){
+    print(i)
+    
+    ## generate table for stats of i trait
+    i_stats_df <- data.frame(matrix(NA, nrow = 3, ncol = ncol(stats_df)))
+    i_stats_df[,1] <- c(mean(pheno[,i]), median(pheno[,i]), sd(pheno[,i])) ##fill out i stats for ALL
+    i_stats_df[,2] <- c(mean(m[,i]), median(m[,i]), sd(m[,i])) ##fill out i stats for m
+    i_stats_df[,3] <- c(mean(f[,i]), median(f[,i]), sd(f[,i])) ##fill out i stats for f
+    i_stats_df[,4] <- c(mean(case[,i]), median(case[,i]), sd(case[,i])) ##fill out i stats for f
+    i_stats_df[,5] <- c(mean(control[,i]), median(control[,i]), sd(control[,i])) ##fill out i stats for m_case
+    i_stats_df[,6] <- c(mean(m_case[,i]), median(m_case[,i]), sd(m_case[,i])) ##fill out i stats for f
+    i_stats_df[,7] <- c(mean(m_control[,i]), median(m_control[,i]), sd(m_control[,i])) ##fill out i stats for m_control
+    i_stats_df[,8] <- c(mean(f_case[,i]), median(f_case[,i]), sd(f_case[,i])) ##fill out i stats for f_case
+    i_stats_df[,9] <- c(mean(f_control[,i]), median(f_control[,i]), sd(f_control[,i])) ##fill out i stats for m_case
+    
+    ## merge table with stats_df
+    names(i_stats_df) <- names(stats_df)
+    row.names(i_stats_df) <- c(paste("mean_",i,sep=""),paste("median_",i,sep=""), paste("sd_of_",i,sep=""))
+    stats_df <- rbind(stats_df, i_stats_df)
+    
+    ## plot boxplots of  i distribution in cases/controls split by ancestry & sex 
+    plot_title <- paste(i," By Ancestry (Boxplot)", sep="")
+    plot <- ggplot(plot_pheno, aes_string(study_ancestry_val, i)) + theme(text = element_text(size=10), axis.text.x = element_text(angle=90, hjust=1))
+    print(plot + geom_boxplot(aes(fill=factor(sex))) + scale_fill_discrete(name = "", labels=c("Female", "Male")) + labs(title = plot_title, x="") + facet_grid(outcome ~ .))
+    
+    ## plot violin plots of same data 
+    plot_title <- paste(i," By Ancestry (violin plot)", sep="")
+    plot <- ggplot(plot_pheno, aes_string(study_ancestry_val, i)) + theme(text = element_text(size=10), axis.text.x = element_text(angle=90, hjust=1))
+    print(plot + geom_violin(aes(fill=factor(sex))) + scale_fill_discrete(name = "", labels=c("Female", "Male")) + labs(title = plot_title, x="") + facet_grid(outcome ~ .))
+    
+  }
+  dev.off()
+  stats_df <- data.matrix(stats_df)
+  write.table(x=stats_df, file=paste(label,"_stats.tsv",sep=""), col.names = TRUE, row.names = TRUE, sep="\t")
+}
